@@ -35,18 +35,21 @@ jobs:
             RELEASE=$APP/releases/$(date +%Y%m%d%H%M%S)
             CURRENT=$APP/current
 
+            echo "Creating release directory"
             mkdir -p $APP/releases
-            cd $APP
 
-            echo "Creating new release"
-            mkdir $RELEASE
+            echo "Cloning new release"
             git clone https://github.com/sahil-dx/CI_CD_basic_pipe.git $RELEASE
 
+            echo "Installing dependencies"
             cd $RELEASE
             npm install
 
-            echo "Switching symlink"
+            echo "Updating current symlink"
             ln -sfn $RELEASE $CURRENT
 
-            echo "Restarting app"
-            pm2 restart node-app || pm2 start index.js --name node-app
+            echo "Starting app with fresh PM2 process"
+            pm2 delete node-app || true
+            cd $CURRENT
+            pm2 start index.js --name node-app
+            pm2 save
