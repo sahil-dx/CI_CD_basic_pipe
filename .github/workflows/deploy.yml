@@ -2,27 +2,32 @@ name: Node CI/CD with Rollback
 
 on:
   push:
-    branches: [ main ]
+    branches:
+      - main
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
         with:
           node-version: 18
 
-      - run: npm install
+      - name: Install dependencies (CI check)
+        run: npm install
 
-      - name: Deploy
+      - name: Deploy to EC2
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
+          port: 22
           script: |
             set -e
 
@@ -30,10 +35,17 @@ jobs:
             RELEASE=$APP/releases/$(date +%Y%m%d%H%M%S)
             CURRENT=$APP/current
 
+            echo "Creating new release: $RELEASE"
             mkdir -p $RELEASE
+
+            echo "Copying files"
             rsync -av --exclude=node_modules ./ $RELEASE
+
             cd $RELEASE
             npm install
 
+            echo "Switching current symlink"
             ln -sfn $RELEASE $CURRENT
-            pm2 restart node-app
+
+            echo "Restarting PM2"
+            pm2 restart node-app || pm2 start $CURRENT/index.js --name node-app
