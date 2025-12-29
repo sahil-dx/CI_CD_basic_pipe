@@ -21,7 +21,7 @@ jobs:
       - name: CI check
         run: npm install
 
-      - name: Deploy to EC2
+      - name: Deploy to EC2 (with rollback)
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.EC2_HOST }}
@@ -34,8 +34,9 @@ jobs:
             APP=/var/www/node-app
             RELEASE=$APP/releases/$(date +%Y%m%d%H%M%S)
             CURRENT=$APP/current
+            PREVIOUS=$(readlink $CURRENT || true)
 
-            echo "Creating release directory"
+            echo "Creating releases directory"
             mkdir -p $APP/releases
 
             echo "Cloning new release"
@@ -45,7 +46,7 @@ jobs:
             cd $RELEASE
             npm install
 
-            echo "Updating current symlink"
+            echo "Switching current symlink to new release"
             ln -sfn $RELEASE $CURRENT
 
             echo "Starting app with fresh PM2 process"
@@ -53,3 +54,24 @@ jobs:
             cd $CURRENT
             pm2 start index.js --name node-app
             pm2 save
+
+            echo "Waiting for app to boot..."
+            sleep 5
+
+            echo "Running health check"
+            if ! curl -f http://localhost:5000; then
+              echo "❌ Health check failed — rolling back"
+
+              pm2 delete node-app || true
+
+              if [ -n "$PREVIOUS" ]; then
+                ln -sfn $PREVIOUS $CURRENT
+                cd $CURRENT
+                pm2 start index.js --name node-app
+                pm2 save
+              fi
+
+              exit 1
+            fi
+
+            echo "✅ Deployment successful"
