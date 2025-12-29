@@ -1,4 +1,4 @@
-name: Node CI/CD with Rollback
+name: Node CI/CD Clean Deploy
 
 on:
   push:
@@ -18,7 +18,7 @@ jobs:
         with:
           node-version: 18
 
-      - name: Install dependencies (CI check)
+      - name: CI check
         run: npm install
 
       - name: Deploy to EC2
@@ -35,17 +35,18 @@ jobs:
             RELEASE=$APP/releases/$(date +%Y%m%d%H%M%S)
             CURRENT=$APP/current
 
-            echo "Creating new release: $RELEASE"
-            mkdir -p $RELEASE
+            mkdir -p $APP/releases
+            cd $APP
 
-            echo "Copying files"
-            rsync -av --exclude=node_modules ./ $RELEASE
+            echo "Creating new release"
+            mkdir $RELEASE
+            git clone https://github.com/sahil-dx/CI_CD_basic_pipe.git $RELEASE
 
             cd $RELEASE
             npm install
 
-            echo "Switching current symlink"
+            echo "Switching symlink"
             ln -sfn $RELEASE $CURRENT
 
-            echo "Restarting PM2"
-            pm2 restart node-app || pm2 start $CURRENT/index.js --name node-app
+            echo "Restarting app"
+            pm2 restart node-app || pm2 start index.js --name node-app
