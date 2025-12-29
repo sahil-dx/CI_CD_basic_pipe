@@ -1,34 +1,39 @@
-name: Node CI/CD (Amazon Linux)
+name: Node CI/CD with Rollback
 
 on:
   push:
-    branches:
-      - main
+    branches: [ main ]
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 18
 
-      - name: Install dependencies
-        run: npm install
+      - run: npm install
 
-      - name: Deploy to EC2 (Amazon Linux)
+      - name: Deploy
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
-            cd /var/www/node-app
-            git pull origin main
+            set -e
+
+            APP=/var/www/node-app
+            RELEASE=$APP/releases/$(date +%Y%m%d%H%M%S)
+            CURRENT=$APP/current
+
+            mkdir -p $RELEASE
+            rsync -av --exclude=node_modules ./ $RELEASE
+            cd $RELEASE
             npm install
-            pm2 restart node-app || pm2 start index.js --name node-app
+
+            ln -sfn $RELEASE $CURRENT
+            pm2 restart node-app
