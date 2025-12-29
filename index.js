@@ -1,6 +1,6 @@
 const express = require('express');
 
-const app = express();
+const app = expressss();
 
 app.get('', (req, res) => {
     res.send('Bawa Good Morning From Express JS')
