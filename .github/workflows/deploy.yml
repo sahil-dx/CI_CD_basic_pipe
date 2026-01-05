@@ -1,0 +1,28 @@
+name: Node CI/CD with Rollback
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy to Server
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_KEY }}
+          script: |
+            set -e
+            cd /var/www/node-app
+
+            git rev-parse HEAD > /tmp/last_good_commit
+            git fetch origin main
+            git reset --hard origin/main
+
+            npm install
+            pm2 restart node-app
