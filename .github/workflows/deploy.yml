@@ -1,4 +1,4 @@
-name: Node CI/CD Clean Deploy
+name: Node Auto Deploy with Rollback
 
 on:
   push:
@@ -10,68 +10,29 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 18
-
-      - name: CI check
-        run: npm install
-
-      - name: Deploy to EC2 (with rollback & clean logs)
+      - name: SSH Deploy
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
-          port: 22
           script: |
             set -e
 
-            APP=/var/www/node-app
-            RELEASE=$APP/releases/$(date +%Y%m%d%H%M%S)
-            CURRENT=$APP/current
-            PREVIOUS=$(readlink $CURRENT || true)
+            APP_DIR=/var/www/node-app
+            BRANCH=main
+            PREV_COMMIT=$(git -C $APP_DIR rev-parse HEAD || echo "")
 
-            mkdir -p $APP/releases
+            echo "Previous commit: $PREV_COMMIT"
 
-            git clone https://github.com/sahil-dx/CI_CD_basic_pipe.git $RELEASE
+            cd $APP_DIR
 
-            cd $RELEASE
-            npm install
+            git fetch origin
+            git reset --hard origin/$BRANCH
 
-            ln -sfn $RELEASE $CURRENT
+            npm install --production
 
-            pm2 delete node-app || true
-            cd $CURRENT
-            pm2 start index.js --name node-app
+            pm2 restart node-app || pm2 start index.js --name node-app
+
             pm2 save
 
-            sleep 5
-
-            # 🔍 HEALTH CHECK (ONLY ERROR LOGS)
-            if ! curl -sf http://localhost:5000 > /dev/null; then
-              echo "❌ Deployment failed — Application error only:"
-              echo "------------------------------------------------"
-
-              tail -n 30 ~/.pm2/logs/node-app-error.log || echo "No error log found"
-
-              echo "------------------------------------------------"
-              echo "Rolling back to previous stable version..."
-
-              pm2 delete node-app || true
-
-              if [ -n "$PREVIOUS" ]; then
-                ln -sfn $PREVIOUS $CURRENT
-                cd $CURRENT
-                pm2 start index.js --name node-app
-                pm2 save
-              fi
-
-              exit 1
-            fi
-
-            echo "✅ Deployment successful"
