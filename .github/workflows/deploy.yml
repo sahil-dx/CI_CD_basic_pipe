@@ -1,4 +1,4 @@
-name: Node CI/CD with Auto Rollback & Error Logs
+name: Node CI/CD with Auto Rollback + Health Check
 
 on:
   push:
@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Deploy with rollback and error visibility
+      - name: Deploy with health check
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.EC2_HOST }}
@@ -20,27 +20,28 @@ jobs:
             set -Eeuo pipefail
 
             cd /var/www/node-app
-
             PREV_COMMIT=$(git rev-parse HEAD)
-            echo "▶ Previous commit: $PREV_COMMIT"
 
-            echo "▶ Fetching latest code"
             git fetch origin main
 
             {
               git reset --hard origin/main
               npm install --silent
               pm2 restart node-app
+              sleep 3
+
+              # 🔥 HEALTH CHECK
+              curl -f http://localhost:5000
             } || {
-              echo "❌ DEPLOY FAILED — STARTING ROLLBACK"
+              echo "❌ APP FAILED — ROLLING BACK"
 
               git reset --hard $PREV_COMMIT
               pm2 restart node-app
 
-              echo "▶ PM2 ERROR LOGS (last 40 lines)"
+              echo "▶ PM2 ERROR LOGS"
               pm2 logs node-app --err --lines 40 --nostream
-
               exit 1
             }
 
-            echo "✅ DEPLOY SUCCESSFUL"
+            echo "✅ DEPLOY SUCCESS"
+
