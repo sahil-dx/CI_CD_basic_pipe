@@ -1,4 +1,4 @@
-name: Node CI/CD with Rollback
+name: Node CI/CD with Auto Rollback & Error Logs
 
 on:
   push:
@@ -10,19 +10,37 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Deploy to Server
+      - name: Deploy with rollback and error visibility
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_KEY }}
           script: |
-            set -e
+            set -Eeuo pipefail
+
             cd /var/www/node-app
 
-            git rev-parse HEAD > /tmp/last_good_commit
-            git fetch origin main
-            git reset --hard origin/main
+            PREV_COMMIT=$(git rev-parse HEAD)
+            echo "▶ Previous commit: $PREV_COMMIT"
 
-            npm install
-            pm2 restart node-app
+            echo "▶ Fetching latest code"
+            git fetch origin main
+
+            {
+              git reset --hard origin/main
+              npm install --silent
+              pm2 restart node-app
+            } || {
+              echo "❌ DEPLOY FAILED — STARTING ROLLBACK"
+
+              git reset --hard $PREV_COMMIT
+              pm2 restart node-app
+
+              echo "▶ PM2 ERROR LOGS (last 40 lines)"
+              pm2 logs node-app --err --lines 40 --nostream
+
+              exit 1
+            }
+
+            echo "✅ DEPLOY SUCCESSFUL"
